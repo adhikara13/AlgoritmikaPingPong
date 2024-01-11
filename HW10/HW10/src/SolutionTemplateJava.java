@@ -1,9 +1,8 @@
-import java.util.concurrent.atomic.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class SolutionTemplateJava implements Lock<SolutionTemplateJava.Node> {
     private final Environment env;
-
-    // todo: необходимые поля (final, используем AtomicReference)
+    private final AtomicReference<Node> tail = new AtomicReference<>(null);
 
     public SolutionTemplateJava(Environment env) {
         this.env = env;
@@ -11,18 +10,35 @@ public class SolutionTemplateJava implements Lock<SolutionTemplateJava.Node> {
 
     @Override
     public Node lock() {
-        Node my = new Node(); // сделали узел
-        // todo: алгоритм
-        return my; // вернули узел
+        Node my = new Node();
+        Node pred = tail.getAndSet(my);
+        if (pred != null) {
+            my.locked.set(true);
+            pred.next.set(my);
+            while (my.locked.get()) {
+                env.park();
+            }
+        }
+        return my;
     }
 
     @Override
     public void unlock(Node node) {
-        // todo: алгоритм
+        if (node.next.get() == null) {
+            if (tail.compareAndSet(node, null)) {
+                return;
+            }
+            while (node.next.get() == null) {
+                // busy wait
+            }
+        }
+        node.next.get().locked.set(false);
+        env.unpark(node.next.get().thread);
     }
 
     static class Node {
-        final Thread thread = Thread.currentThread(); // запоминаем поток, которые создал узел
-        // todo: необходимые поля (final, используем AtomicReference)
+        final Thread thread = Thread.currentThread();
+        final AtomicReference<Boolean> locked = new AtomicReference<>(false);
+        final AtomicReference<Node> next = new AtomicReference<>(null);
     }
 }
