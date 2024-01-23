@@ -1,52 +1,106 @@
+import kotlinx.atomicfu.*
 import java.util.concurrent.*
-import java.util.concurrent.atomic.*
 
 class FlatCombiningQueue<E> : Queue<E> {
-    private val queue = ArrayDeque<E>() // sequential queue
-    private val combinerLock = AtomicBoolean(false) // unlocked initially
-    private val tasksForCombiner = AtomicReferenceArray<Any?>(TASKS_FOR_COMBINER_SIZE)
+    private val sequentialQueue = ArrayDeque<E>() // Renamed to clarify it's the sequential queue
+    private val combinerLock = atomic(false) // Renamed for clarity, it represents the lock status
+    private val tasksForCombiner = atomicArrayOfNulls<Any?>(TASKS_FOR_COMBINER_SIZE)
+    private val valsForCombiner = atomicArrayOfNulls<Any?>(TASKS_FOR_COMBINER_SIZE)
+
+    private fun tryLock() = combinerLock.compareAndSet(false, update = true)
+    
+    private fun unlock() {
+        combinerLock.value = false
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun help() {
+        for (i in 0 until TASKS_FOR_COMBINER_SIZE) {
+            val currentTask = tasksForCombiner[i].value
+
+            if (currentTask == null || currentTask == PROCESSED) {
+                continue
+            }
+
+            if (currentTask == DEQUE_TASK) {
+                valsForCombiner[i].value = sequentialQueue.removeFirstOrNull()
+            }
+
+            if (tasksForCombiner[i].compareAndSet(DEQUE_TASK, PROCESSED)) {
+                continue
+            }
+
+            if (tasksForCombiner[i].compareAndSet(currentTask, PROCESSED)) {
+                sequentialQueue.addLast(currentTask as E)
+            }
+        }
+        unlock()
+    }
 
     override fun enqueue(element: E) {
-        // TODO: Make this code thread-safe using the flat-combining technique.
-        // TODO: 1.  Try to become a combiner by
-        // TODO:     changing `combinerLock` from `false` (unlocked) to `true` (locked).
-        // TODO: 2a. On success, apply this operation and help others by traversing
-        // TODO:     `tasksForCombiner`, performing the announced operations, and
-        // TODO:      updating the corresponding cells to `Result`.
-        // TODO: 2b. If the lock is already acquired, announce this operation in
-        // TODO:     `tasksForCombiner` by replacing a random cell state from
-        // TODO:      `null` with the element. Wait until either the cell state
-        // TODO:      updates to `Result` (do not forget to clean it in this case),
-        // TODO:      or `combinerLock` becomes available to acquire.
-        queue.addLast(element)
+        val randomCellIndex = randomCellIndex()
+
+        while (true) {
+            if (tasksForCombiner[randomCellIndex].compareAndSet(null, element)) {
+                while (!tryLock()) {
+                    if (tasksForCombiner[randomCellIndex].compareAndSet(PROCESSED, null)) {
+                        return
+                    }
+                }
+
+                if (tasksForCombiner[randomCellIndex].compareAndSet(element, null)) {
+                    sequentialQueue.addLast(element)
+                    help()
+                    return
+                }
+
+                tasksForCombiner[randomCellIndex].compareAndSet(PROCESSED, null)
+                help()
+                return
+            }
+        }
     }
 
     override fun dequeue(): E? {
-        // TODO: Make this code thread-safe using the flat-combining technique.
-        // TODO: 1.  Try to become a combiner by
-        // TODO:     changing `combinerLock` from `false` (unlocked) to `true` (locked).
-        // TODO: 2a. On success, apply this operation and help others by traversing
-        // TODO:     `tasksForCombiner`, performing the announced operations, and
-        // TODO:      updating the corresponding cells to `Result`.
-        // TODO: 2b. If the lock is already acquired, announce this operation in
-        // TODO:     `tasksForCombiner` by replacing a random cell state from
-        // TODO:      `null` with `Dequeue`. Wait until either the cell state
-        // TODO:      updates to `Result` (do not forget to clean it in this case),
-        // TODO:      or `combinerLock` becomes available to acquire.
-        return queue.removeFirstOrNull()
+        val randomCellIndex = randomCellIndex()
+
+        @Suppress("UNCHECKED_CAST")
+        while (true) {
+            if (tasksForCombiner[randomCellIndex].compareAndSet(null, DEQUE_TASK)) {
+                while (!tryLock()) {
+                    if (tasksForCombiner[randomCellIndex].value == PROCESSED) {
+                        return (valsForCombiner[randomCellIndex].value as E).also {
+                            tasksForCombiner[randomCellIndex].compareAndSet(PROCESSED, null)
+                        }
+                    }
+                }
+
+                if (tasksForCombiner[randomCellIndex].compareAndSet(DEQUE_TASK, null)) {
+                    return sequentialQueue.removeFirstOrNull().also {
+                        help()
+                    }
+                }
+
+                return (valsForCombiner[randomCellIndex].value as E).also {
+                    tasksForCombiner[randomCellIndex].compareAndSet(PROCESSED, null)
+                    help()
+                }
+            }
+        }
     }
 
     private fun randomCellIndex(): Int =
-        ThreadLocalRandom.current().nextInt(tasksForCombiner.length())
+        ThreadLocalRandom.current().nextInt(tasksForCombiner.size)
 }
 
 private const val TASKS_FOR_COMBINER_SIZE = 3 // Do not change this constant!
+private val DEQUE_TASK = Any()
+private val PROCESSED = Any()
 
-// TODO: Put this token in `tasksForCombiner` for dequeue().
-// TODO: enqueue()-s should put the inserting element.
-private object Dequeue
+// Renamed to clarify its purpose.
+private object DequeueTask
 
-// TODO: Put the result wrapped with `Result` when the operation in `tasksForCombiner` is processed.
-private class Result<V>(
+// Result class is clarified with a more descriptive name.
+private class ResultWrapper<V>(
     val value: V
 )

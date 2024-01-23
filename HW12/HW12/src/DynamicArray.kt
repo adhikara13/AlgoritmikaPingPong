@@ -33,30 +33,66 @@ interface DynamicArray<E> {
 class DynamicArrayImpl<E> : DynamicArray<E> {
     private val core = atomic(Core<E>(INITIAL_CAPACITY))
 
+    private val RESIZE_FACTOR = 2
+
     override fun get(index: Int): E = core.value.get(index)
 
     override fun put(index: Int, element: E) {
-        TODO("Not yet implemented")
+        var curCore: Core<E>? = core.value
+        if (curCore!!._size.value <= index) throw IllegalArgumentException()
+        while (curCore != null) {
+            curCore.array[index].getAndSet(element)
+            curCore = curCore.next.value
+        }
     }
 
     override fun pushBack(element: E) {
-        TODO("Not yet implemented")
+        while (true) {
+            val curCore = this.core.value
+            val curSize = curCore._size.value
+            val curCapacity = curCore._capacity.value
+            if (curSize < curCapacity) {
+                if (tryInsert(element, curCore, curSize)) {
+                    break
+                }
+            } else {
+                tryResizeAndContinue(curCore, curSize, curCapacity)
+            }
+        }
     }
 
-    override val size: Int get() = core.value.size
+    override val size: Int get() = core.value._size.value
+
+    private fun tryInsert(element: E, coreVal: Core<E>, curSize: Int): Boolean {
+        val successfullyUpdated = coreVal.array[curSize].compareAndSet(null, element)
+        coreVal._size.compareAndSet(curSize, curSize + 1)
+        return successfullyUpdated
+    }
+
+    private fun tryResizeAndContinue(coreVal: Core<E>, curSize: Int, curCapacity: Int) {
+        val nextCore = Core<E>(curCapacity * RESIZE_FACTOR)
+        nextCore._size.compareAndSet(0, curSize)
+        coreVal.next.compareAndSet(null, nextCore)
+        (0 until curCapacity).forEach { i ->
+            coreVal.next.value!!.array[i].compareAndSet(null, coreVal.array[i].value)
+        }
+        this.core.compareAndSet(coreVal, coreVal.next.value!!)
+    }
 }
 
 private class Core<E>(
     capacity: Int,
 ) {
-    private val array = atomicArrayOfNulls<E>(capacity)
-    private val _size = atomic(0)
+    val array = atomicArrayOfNulls<E>(capacity)
+    val _size = atomic(0)
+    val next = atomic<Core<E>?>(null)
+    val _capacity = atomic(capacity)
 
     val size: Int = _size.value
 
     @Suppress("UNCHECKED_CAST")
     fun get(index: Int): E {
-        require(index < size)
+        require(index < _size.value)
         return array[index].value as E
     }
 }

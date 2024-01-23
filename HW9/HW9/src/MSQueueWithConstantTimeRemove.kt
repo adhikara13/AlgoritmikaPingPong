@@ -13,19 +13,45 @@ class MSQueueWithConstantTimeRemove<E> : QueueWithRemove<E> {
     }
 
     override fun enqueue(element: E) {
-        // TODO: When adding a new node, check whether
-        // TODO: the previous tail is logically removed.
-        // TODO: If so, remove it physically from the linked list.
-        TODO("Implement me!")
+        while (true) {
+            val curTail = tail.get()
+            val node = Node(element, curTail)
+
+            if (curTail.next.compareAndSet(null, node)) {
+                tail.compareAndSet(curTail, node)
+
+                if (curTail.extractedOrRemoved) {
+                    curTail.remove()
+                }
+
+                return
+            }
+
+            tail.compareAndSet(curTail, curTail.next.get())
+
+            if (curTail.extractedOrRemoved) {
+                curTail.remove()
+            }
+        }
     }
 
     override fun dequeue(): E? {
-        // TODO: After moving the `head` pointer forward,
-        // TODO: mark the node that contains the extracting
-        // TODO: element as "extracted or removed", restarting
-        // TODO: the operation if this node has already been removed.
-        TODO("Implement me!")
+        while (true) {
+            val curHead = head.get()
+            val curHeadNext = curHead.next.get() ?: return null
+
+            curHeadNext.prev.set(null)
+
+            if (head.compareAndSet(curHead, curHeadNext)) {
+                if (curHeadNext.markExtractedOrRemoved()) {
+                    return curHeadNext.element
+                }
+
+                curHeadNext.next.get() ?: return null
+            }
+        }
     }
+
 
     override fun remove(element: E): Boolean {
         // Traverse the linked list, searching the specified
@@ -88,11 +114,9 @@ class MSQueueWithConstantTimeRemove<E> : QueueWithRemove<E> {
          */
         private val _extractedOrRemoved = AtomicBoolean(false)
         val extractedOrRemoved
-            get() =
-                _extractedOrRemoved.get()
+            get() = _extractedOrRemoved.get()
 
-        fun markExtractedOrRemoved(): Boolean =
-            _extractedOrRemoved.compareAndSet(false, true)
+        fun markExtractedOrRemoved(): Boolean = _extractedOrRemoved.compareAndSet(false, true)
 
         /**
          * Removes this node from the queue structure.
@@ -101,21 +125,22 @@ class MSQueueWithConstantTimeRemove<E> : QueueWithRemove<E> {
          * removed by [remove] or extracted by [dequeue].
          */
         fun remove(): Boolean {
-            // TODO: As in the previous task, the removal procedure is split into two phases.
-            // TODO: First, you need to mark the node as "extracted or removed".
-            // TODO: On success, this node is logically removed, and the
-            // TODO: operation should return `true` at the end.
-            // TODO: In the second phase, the node should be removed
-            // TODO: physically, updating the `next` field of the previous
-            // TODO: node to `this.next.value`.
-            // TODO: In this task, you have to maintain the `prev` pointer,
-            // TODO: which references the previous node. Thus, the `remove()`
-            // TODO: complexity becomes O(1) under no contention.
-            // TODO: Do not remove physical head and tail of the linked list;
-            // TODO: it is totally fine to have a bounded number of removed nodes
-            // TODO: in the linked list, especially when it significantly simplifies
-            // TODO: the algorithm.
-            TODO("Implement me!")
+            val isRemoved = markExtractedOrRemoved()
+            val nextElement = next.get() ?: return isRemoved
+            val prevElement = prev.get() ?: return isRemoved
+            prevElement.next.set(nextElement)
+            while (true) {
+                val currentPrevNext = nextElement.prev.get() ?: break
+                if (nextElement.prev.compareAndSet(currentPrevNext, prevElement)) break
+            }
+            if (prevElement.extractedOrRemoved) {
+                prevElement.remove()
+            }
+            if (nextElement.extractedOrRemoved) {
+                nextElement.remove()
+            }
+            return isRemoved
         }
+        
     }
 }

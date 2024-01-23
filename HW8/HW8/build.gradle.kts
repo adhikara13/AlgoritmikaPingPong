@@ -1,21 +1,18 @@
-plugins {
-    kotlin("jvm") version "1.9.10"
-    java
-}
-
-tasks {
-    test {
-        maxHeapSize = "4g"
-        jvmArgs(
-            "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
-            "--add-exports", "java.base/jdk.internal.util=ALL-UNNAMED",
-            "--add-exports", "java.base/sun.security.action=ALL-UNNAMED"
-        )
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.jetbrains.kotlinx:atomicfu-gradle-plugin:0.18.3")
     }
 }
 
-group = "ru.itmo.mpp"
-version = "1.0-SNAPSHOT"
+plugins {
+    kotlin("jvm") version "1.7.10"
+    java
+}
+apply(plugin = "kotlinx-atomicfu")
+
 
 repositories {
     mavenCentral()
@@ -25,12 +22,13 @@ dependencies {
     implementation(kotlin("stdlib-jdk8"))
     implementation(kotlin("reflect"))
     testImplementation(kotlin("test-junit"))
-    testImplementation("org.jetbrains.kotlinx:lincheck:2.23")
+    testImplementation("org.jetbrains.kotlinx:lincheck:2.16")
+    testImplementation("com.amazonaws:aws-java-sdk-s3:1.12.429")
 }
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
+tasks {
+    test {
+        maxHeapSize = "6g"
     }
 }
 
@@ -40,4 +38,18 @@ sourceSets.main {
 
 sourceSets.test {
     java.srcDir("test")
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+tasks.withType<Test> {
+    jvmArgs(
+        "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
+        "--add-exports", "java.base/jdk.internal.util=ALL-UNNAMED",
+        "--add-exports", "java.base/sun.security.action=ALL-UNNAMED"
+    )
 }
