@@ -3,16 +3,25 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("org.jetbrains.kotlinx:atomicfu-gradle-plugin:0.18.3")
+        classpath("org.jetbrains.kotlinx:atomicfu-gradle-plugin:0.17.0")
     }
 }
 
 plugins {
-    kotlin("jvm") version "1.7.10"
+    kotlin("jvm") version "1.6.0"
     java
 }
+
+tasks {
+    test {
+        maxHeapSize = "4g"
+    }
+}
+
 apply(plugin = "kotlinx-atomicfu")
 
+group = "ru.ifmo.mpp"
+version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -22,34 +31,13 @@ dependencies {
     implementation(kotlin("stdlib-jdk8"))
     implementation(kotlin("reflect"))
     testImplementation(kotlin("test-junit"))
-    testImplementation("org.jetbrains.kotlinx:lincheck:2.16")
-    testImplementation("com.amazonaws:aws-java-sdk-s3:1.12.429")
+    testImplementation("org.jetbrains.kotlinx:lincheck:2.14.1")
 }
 
-tasks {
-    test {
-        maxHeapSize = "6g"
-    }
-}
-
-sourceSets.main {
-    java.srcDir("src")
-}
-
-sourceSets.test {
-    java.srcDir("test")
-}
+sourceSets["main"].java.setSrcDirs(listOf("src"))
+sourceSets["test"].java.setSrcDirs(listOf("test"))
 
 java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
-    }
-}
-
-tasks.withType<Test> {
-    jvmArgs(
-        "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
-        "--add-exports", "java.base/jdk.internal.util=ALL-UNNAMED",
-        "--add-exports", "java.base/sun.security.action=ALL-UNNAMED"
-    )
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
 }
